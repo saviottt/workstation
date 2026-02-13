@@ -61,7 +61,7 @@ class SolarInput(BaseModel):
 
     Tilt: Optional[float] = None
     Azimuth: Optional[float] = None
-
+    NOCT: Optional[float] = 45
 
 # ----------------------------
 # Fetch NASA Climate
@@ -87,8 +87,31 @@ def fetch_nasa_climate(lat: float, lon: float):
 # ----------------------------
 # Temperature Derating
 # ----------------------------
-def temperature_derating(temp: float) -> float:
-    effect = 1 + TEMP_COEFFICIENT * (temp - 25)
+def calculate_cell_temperature(
+    ambient_temp: float,
+    irradiance_kwh_m2_day: float,
+    noct: float
+) -> float:
+    """
+    Calculate solar panel cell temperature using NOCT model.
+    """
+
+    # Convert kWh/m²/day to average W/m²
+    irradiance_w_m2 = irradiance_kwh_m2_day * 1000 / 24
+
+    cell_temp = ambient_temp + ((noct - 20) / 800) * irradiance_w_m2
+
+    return cell_temp
+
+
+def temperature_derating_from_cell(cell_temp: float) -> float:
+    """
+    Apply -0.4% per °C above 25°C based on cell temperature.
+    """
+
+    temp_coefficient = -0.004  # -0.4% per °C
+    effect = 1 + temp_coefficient * (cell_temp - 25)
+
     return max(0.75, min(effect, 1.05))
 
 
@@ -175,7 +198,14 @@ def predict_solar(data: SolarInput):
         )
 
         # Temperature Effect
-        temp_effect = temperature_derating(temp)
+        cell_temp = calculate_cell_temperature(
+            ambient_temp=temp,
+            irradiance_kwh_m2_day=corrected_irradiance,
+            noct=data.NOCT
+        )
+
+        temp_effect = temperature_derating_from_cell(cell_temp)
+
 
         # Monthly Energy (kWh)
         monthly_energy = (
@@ -262,8 +292,8 @@ def predict_solar(data: SolarInput):
     # ----------------------------
     return {
         "Panel_Tilt_Used": round(tilt, 2),
-        "Optimal_Tilt_Suggested": round(calculate_optimal_tilt(data.Latitude), 2),
         "Panel_Azimuth_Used": round(azimuth, 2),
+        "Optimal_Tilt_Suggested": round(calculate_optimal_tilt(data.Latitude), 2),
 
         "Monthly_Breakdown": monthly_results,
         "Solar_Generation_kWh_per_Year": round(yearly_energy, 2),
