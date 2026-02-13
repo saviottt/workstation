@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import joblib
 import numpy as np
 import requests
@@ -58,9 +59,12 @@ class SolarInput(BaseModel):
     EV_Efficiency: float
     Export_Tariff: float
 
+    Tilt: Optional[float] = None
+    Azimuth: Optional[float] = None
+
 
 # ----------------------------
-# Helper: Fetch NASA Climate
+# Fetch NASA Climate
 # ----------------------------
 def fetch_nasa_climate(lat: float, lon: float):
     nasa_url = (
@@ -81,11 +85,32 @@ def fetch_nasa_climate(lat: float, lon: float):
 
 
 # ----------------------------
-# Helper: Temperature Correction
+# Temperature Derating
 # ----------------------------
 def temperature_derating(temp: float) -> float:
     effect = 1 + TEMP_COEFFICIENT * (temp - 25)
     return max(0.75, min(effect, 1.05))
+
+
+# ----------------------------
+# Simplified Tilt Correction
+# ----------------------------
+def apply_tilt_correction(ghi: float, latitude: float, tilt: float) -> float:
+    """
+    Applies a simplified geometric correction for panel tilt.
+    Works correctly for monthly average GHI (kWh/m²/day).
+    """
+
+    latitude_rad = np.radians(latitude)
+    tilt_rad = np.radians(tilt)
+
+    # Basic cosine-based geometric correction
+    tilt_factor = np.cos(latitude_rad - tilt_rad) / np.cos(latitude_rad)
+
+    # Clamp to realistic limits (avoid over-amplification)
+    tilt_factor = max(0.85, min(1.15, tilt_factor))
+
+    return ghi * tilt_factor
 
 
 # ----------------------------
@@ -97,13 +122,26 @@ def predict_solar(data: SolarInput):
     if data.Month < 1 or data.Month > 12:
         raise HTTPException(status_code=400, detail="Month must be between 1 and 12")
 
+    # ----------------------------
+    # Smart Defaults
+    # ----------------------------
+    def calculate_optimal_tilt(latitude: float) -> float:
+        return abs(0.76 * latitude + 3.1)
+
+    tilt = data.Tilt if data.Tilt is not None else calculate_optimal_tilt(data.Latitude)
+
+    azimuth = data.Azimuth if data.Azimuth is not None else 180  # reserved for future use
+
+    # ----------------------------
+    # Fetch Climate Data
+    # ----------------------------
     climate = fetch_nasa_climate(data.Latitude, data.Longitude)
 
     monthly_results = []
     yearly_energy = 0
 
     # ----------------------------
-    # Monthly Radiation + Yield Calculation
+    # Monthly Loop
     # ----------------------------
     for month in range(1, 13):
 
@@ -126,13 +164,23 @@ def predict_solar(data: SolarInput):
             month_cos
         ]])
 
-        predicted_radiation = float(model.predict(input_data)[0])
+        # ML Prediction (GHI in kWh/m²/day)
+        predicted_ghi = float(model.predict(input_data)[0])
 
+        # Apply Tilt Correction (consistent with monthly data)
+        corrected_irradiance = apply_tilt_correction(
+            predicted_ghi,
+            data.Latitude,
+            tilt
+        )
+
+        # Temperature Effect
         temp_effect = temperature_derating(temp)
 
+        # Monthly Energy (kWh)
         monthly_energy = (
             data.System_Size *
-            predicted_radiation *
+            corrected_irradiance *
             DAYS_IN_MONTH[month] *
             PR *
             temp_effect
@@ -142,7 +190,8 @@ def predict_solar(data: SolarInput):
 
         monthly_results.append({
             "Month": month_key,
-            "Radiation_kWh_m2_day": round(predicted_radiation, 2),
+            "GHI_kWh_m2_day": round(predicted_ghi, 2),
+            "Tilted_Irradiance_kWh_m2_day": round(corrected_irradiance, 2),
             "Temperature_C": round(temp, 2),
             "Monthly_Energy_kWh": round(monthly_energy, 2)
         })
@@ -160,7 +209,6 @@ def predict_solar(data: SolarInput):
     ev_yearly_energy = ev_daily_energy * 365
 
     total_yearly_usage = yearly_home_consumption + ev_yearly_energy
-
     surplus_energy = yearly_energy - total_yearly_usage
 
     # ----------------------------
@@ -178,11 +226,7 @@ def predict_solar(data: SolarInput):
         grid_purchase_cost = abs(surplus_energy) * data.Tariff
 
     annual_net_benefit = savings_from_usage + export_income - grid_purchase_cost
-
-    payback_years = (
-        total_cost / annual_net_benefit
-        if annual_net_benefit > 0 else None
-    )
+    payback_years = total_cost / annual_net_benefit if annual_net_benefit > 0 else None
 
     # ----------------------------
     # CO2 Offset
@@ -195,7 +239,6 @@ def predict_solar(data: SolarInput):
     total_savings_25 = 0
 
     for year in range(YEARS_PROJECTION):
-
         degraded_energy = yearly_energy * ((1 - DEGRADATION_RATE) ** year)
         degraded_surplus = degraded_energy - total_yearly_usage
 
@@ -218,8 +261,13 @@ def predict_solar(data: SolarInput):
     # Final Response
     # ----------------------------
     return {
+        "Panel_Tilt_Used": round(tilt, 2),
+        "Optimal_Tilt_Suggested": round(calculate_optimal_tilt(data.Latitude), 2),
+        "Panel_Azimuth_Used": round(azimuth, 2),
+
         "Monthly_Breakdown": monthly_results,
         "Solar_Generation_kWh_per_Year": round(yearly_energy, 2),
+
         "Home_Consumption_kWh_per_Year": round(yearly_home_consumption, 2),
         "EV_Consumption_kWh_per_Year": round(ev_yearly_energy, 2),
         "Total_Usage_kWh_per_Year": round(total_yearly_usage, 2),
