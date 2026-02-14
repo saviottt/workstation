@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kerala Smart Solar Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-900 font-sans">
+
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-orange-600 mb-2"> Kerala Smart Solar Intelligence</h1>
+            <p class="text-gray-600">Advanced AI-driven Solar Potential & Financial Projection</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <section class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Location & System Info</h2>
+                <form id="solarForm" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium">Latitude</label>
+                            <input type="number" step="any" name="Latitude" value="10.8505" required
+                                class="w-full p-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Longitude</label>
+                            <input type="number" step="any" name="Longitude" value="76.2711" required
+                                class="w-full p-2 border rounded-md">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium">System Size (kW)</label>
+                        <input type="number" step="0.1" name="System_Size" value="5" required
+                            class="w-full p-2 border rounded-md">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium">Unit Tariff (₹)</label>
+                            <input type="number" step="0.1" name="Tariff" value="6.5" required
+                                class="w-full p-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Export Tariff (₹)</label>
+                            <input type="number" step="0.1" name="Export_Tariff" value="3.5" required
+                                class="w-full p-2 border rounded-md">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium">Monthly Home Usage (kWh)</label>
+                        <input type="number" name="Monthly_Consumption" value="300" required
+                            class="w-full p-2 border rounded-md">
+                    </div>
+
+                    <div class="bg-blue-50 p-3 rounded-lg">
+                        <h3 class="text-sm font-bold text-blue-800 mb-2">EV Parameters</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs font-medium">Daily KM</label>
+                                <input type="number" name="EV_Daily_KM" value="40" class="w-full p-2 border rounded-md">
+                            </div>
+                            <div>
+                                <label class="text-xs font-medium">Efficiency (km/kWh)</label>
+                                <input type="number" step="0.1" name="EV_Efficiency" value="7.0"
+                                    class="w-full p-2 border rounded-md">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-lg transition duration-200">
+                        Calculate Intelligence
+                    </button>
+                </form>
+            </section>
+
+            <section class="lg:col-span-2 space-y-6">
+                <div id="summaryCards" class="grid grid-cols-2 md:grid-cols-4 gap-4 hidden">
+                    <div class="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
+                        <p class="text-xs text-gray-500 uppercase">Yearly Generation</p>
+                        <p id="resGen" class="text-xl font-bold">-- kWh</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+                        <p class="text-xs text-gray-500 uppercase">Annual Benefit</p>
+                        <p id="resBenefit" class="text-xl font-bold">₹ --</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow border-l-4 border-orange-500">
+                        <p class="text-xs text-gray-500 uppercase">Payback Period</p>
+                        <p id="resPayback" class="text-xl font-bold">-- Years</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow border-l-4 border-indigo-500">
+                        <p class="text-xs text-gray-500 uppercase">CO2 Offset</p>
+                        <p id="resCO2" class="text-xl font-bold">-- Tons</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h3 class="text-lg font-semibold mb-4">Monthly Generation vs Consumption</h3>
+                    <canvas id="generationChart" height="100"></canvas>
+                </div>
+
+                <div id="outlookCard"
+                    class="bg-gradient-to-r from-orange-500 to-orange-600 p-6 rounded-xl shadow-md text-white hidden">
+                    <h3 class="text-lg font-bold mb-2">25-Year Financial Outlook</h3>
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-sm opacity-90">Total Projected Savings</p>
+                            <p id="resTotalSavings" class="text-3xl font-bold">₹ --</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm opacity-90">Net Profit</p>
+                            <p id="resNetProfit" class="text-3xl font-bold">₹ --</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('solarForm');
+        let chartInstance = null;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData);
+
+            // Prepare payload for Pydantic model
+            const payload = {
+                Latitude: parseFloat(data.Latitude),
+                Longitude: parseFloat(data.Longitude),
+                Month: 1, // Default starting month
+                System_Size: parseFloat(data.System_Size),
+                Tariff: parseFloat(data.Tariff),
+                Monthly_Consumption: parseFloat(data.Monthly_Consumption),
+                EV_Daily_KM: parseFloat(data.EV_Daily_KM),
+                EV_Efficiency: parseFloat(data.EV_Efficiency),
+                Export_Tariff: parseFloat(data.Export_Tariff)
+            };
+
+            try {
+                // Fetch from the local FastAPI instance
+                const response = await fetch('http://localhost:8000/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('API Error');
+
+                const result = await response.json();
+                updateUI(result);
+            } catch (err) {
+                console.error(err);
+                alert("Error connecting to API. Ensure your FastAPI server is running at http://localhost:8000");
+            }
+        });
+
+        function updateUI(res) {
+            // Make hidden UI elements visible
+            document.getElementById('summaryCards').classList.remove('hidden');
+            document.getElementById('outlookCard').classList.remove('hidden');
+
+            // Standard property access
+            document.getElementById('resGen').innerText = res.Solar_Generation_kWh_per_Year.toLocaleString() + " kWh";
+            document.getElementById('resBenefit').innerText = "₹ " + res.Annual_Net_Benefit_Rs.toLocaleString();
+            document.getElementById('resPayback').innerText = res.Payback_Years ? res.Payback_Years + " Yrs" : "N/A";
+            document.getElementById('resCO2').innerText = res.CO2_Offset_Tons_per_Year + " Tons";
+
+            // FIXED: Using bracket notation for properties starting with numbers
+            document.getElementById('resTotalSavings').innerText = "₹ " + res["25_Year_Total_Savings_Rs"].toLocaleString();
+            document.getElementById('resNetProfit').innerText = "₹ " + res["25_Year_Net_Profit_Rs"].toLocaleString();
+
+            renderChart(res.Monthly_Breakdown);
+        }
+
+        function renderChart(monthlyData) {
+            const ctx = document.getElementById('generationChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: monthlyData.map(m => m.Month),
+                    datasets: [{
+                        label: 'Solar Energy (kWh)',
+                        data: monthlyData.map(m => m.Monthly_Energy_kWh),
+                        backgroundColor: 'rgba(249, 115, 22, 0.7)',
+                        borderColor: 'rgb(249, 115, 22)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

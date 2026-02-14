@@ -9,7 +9,8 @@ import requests
 # ----------------------------
 # Load Model
 # ----------------------------
-model = joblib.load("kerala_monthly_location_model.pkl")
+# FIXED: Updated filename to match your notebook output
+model = joblib.load("solar_monthly_model.pkl")
 
 app = FastAPI(title="Kerala Smart Solar Intelligence API")
 
@@ -92,26 +93,15 @@ def calculate_cell_temperature(
     irradiance_kwh_m2_day: float,
     noct: float
 ) -> float:
-    """
-    Calculate solar panel cell temperature using NOCT model.
-    """
-
     # Convert kWh/m²/day to average W/m²
     irradiance_w_m2 = irradiance_kwh_m2_day * 1000 / 24
-
     cell_temp = ambient_temp + ((noct - 20) / 800) * irradiance_w_m2
-
     return cell_temp
 
 
 def temperature_derating_from_cell(cell_temp: float) -> float:
-    """
-    Apply -0.4% per °C above 25°C based on cell temperature.
-    """
-
     temp_coefficient = -0.004  # -0.4% per °C
     effect = 1 + temp_coefficient * (cell_temp - 25)
-
     return max(0.75, min(effect, 1.05))
 
 
@@ -119,20 +109,10 @@ def temperature_derating_from_cell(cell_temp: float) -> float:
 # Simplified Tilt Correction
 # ----------------------------
 def apply_tilt_correction(ghi: float, latitude: float, tilt: float) -> float:
-    """
-    Applies a simplified geometric correction for panel tilt.
-    Works correctly for monthly average GHI (kWh/m²/day).
-    """
-
     latitude_rad = np.radians(latitude)
     tilt_rad = np.radians(tilt)
-
-    # Basic cosine-based geometric correction
     tilt_factor = np.cos(latitude_rad - tilt_rad) / np.cos(latitude_rad)
-
-    # Clamp to realistic limits (avoid over-amplification)
     tilt_factor = max(0.85, min(1.15, tilt_factor))
-
     return ghi * tilt_factor
 
 
@@ -152,8 +132,7 @@ def predict_solar(data: SolarInput):
         return abs(0.76 * latitude + 3.1)
 
     tilt = data.Tilt if data.Tilt is not None else calculate_optimal_tilt(data.Latitude)
-
-    azimuth = data.Azimuth if data.Azimuth is not None else 180  # reserved for future use
+    azimuth = data.Azimuth if data.Azimuth is not None else 180 
 
     # ----------------------------
     # Fetch Climate Data
@@ -167,7 +146,6 @@ def predict_solar(data: SolarInput):
     # Monthly Loop
     # ----------------------------
     for month in range(1, 13):
-
         month_key = MONTH_MAP[month]
 
         temp = climate["T2M"][month_key]
@@ -177,9 +155,8 @@ def predict_solar(data: SolarInput):
         month_sin = np.sin(2 * np.pi * month / 12)
         month_cos = np.cos(2 * np.pi * month / 12)
 
+        # FIXED: Removed Latitude/Longitude from input to match your 5-feature model
         input_data = np.array([[
-            data.Latitude,
-            data.Longitude,
             temp,
             humidity,
             wind_speed,
@@ -190,7 +167,7 @@ def predict_solar(data: SolarInput):
         # ML Prediction (GHI in kWh/m²/day)
         predicted_ghi = float(model.predict(input_data)[0])
 
-        # Apply Tilt Correction (consistent with monthly data)
+        # Apply Tilt Correction
         corrected_irradiance = apply_tilt_correction(
             predicted_ghi,
             data.Latitude,
@@ -205,7 +182,6 @@ def predict_solar(data: SolarInput):
         )
 
         temp_effect = temperature_derating_from_cell(cell_temp)
-
 
         # Monthly Energy (kWh)
         monthly_energy = (
@@ -227,23 +203,14 @@ def predict_solar(data: SolarInput):
         })
 
     # ----------------------------
-    # Consumption Calculations
+    # Consumption & Financials
     # ----------------------------
     yearly_home_consumption = data.Monthly_Consumption * 12
-
-    ev_daily_energy = (
-        data.EV_Daily_KM / data.EV_Efficiency
-        if data.EV_Efficiency != 0 else 0
-    )
-
+    ev_daily_energy = (data.EV_Daily_KM / data.EV_Efficiency if data.EV_Efficiency != 0 else 0)
     ev_yearly_energy = ev_daily_energy * 365
 
     total_yearly_usage = yearly_home_consumption + ev_yearly_energy
     surplus_energy = yearly_energy - total_yearly_usage
-
-    # ----------------------------
-    # Financial Calculations
-    # ----------------------------
     total_cost = data.System_Size * COST_PER_KW
 
     if surplus_energy >= 0:
@@ -257,60 +224,36 @@ def predict_solar(data: SolarInput):
 
     annual_net_benefit = savings_from_usage + export_income - grid_purchase_cost
     payback_years = total_cost / annual_net_benefit if annual_net_benefit > 0 else None
-
-    # ----------------------------
-    # CO2 Offset
-    # ----------------------------
     co2_offset = yearly_energy * 0.82 / 1000
 
-    # ----------------------------
     # 25-Year Projection
-    # ----------------------------
     total_savings_25 = 0
-
     for year in range(YEARS_PROJECTION):
         degraded_energy = yearly_energy * ((1 - DEGRADATION_RATE) ** year)
         degraded_surplus = degraded_energy - total_yearly_usage
-
         if degraded_surplus >= 0:
-            yearly_savings = (
-                total_yearly_usage * data.Tariff +
-                degraded_surplus * data.Export_Tariff
-            )
+            yearly_savings = (total_yearly_usage * data.Tariff + degraded_surplus * data.Export_Tariff)
         else:
-            yearly_savings = (
-                degraded_energy * data.Tariff -
-                abs(degraded_surplus) * data.Tariff
-            )
-
+            yearly_savings = (degraded_energy * data.Tariff - abs(degraded_surplus) * data.Tariff)
         total_savings_25 += yearly_savings
 
     net_profit_25 = total_savings_25 - total_cost
 
-    # ----------------------------
-    # Final Response
-    # ----------------------------
     return {
         "Panel_Tilt_Used": round(tilt, 2),
         "Panel_Azimuth_Used": round(azimuth, 2),
         "Optimal_Tilt_Suggested": round(calculate_optimal_tilt(data.Latitude), 2),
-
         "Monthly_Breakdown": monthly_results,
         "Solar_Generation_kWh_per_Year": round(yearly_energy, 2),
-
         "Home_Consumption_kWh_per_Year": round(yearly_home_consumption, 2),
         "EV_Consumption_kWh_per_Year": round(ev_yearly_energy, 2),
         "Total_Usage_kWh_per_Year": round(total_yearly_usage, 2),
         "Surplus_or_Deficit_kWh": round(surplus_energy, 2),
-
         "Export_Income_Rs": round(export_income, 2),
         "Grid_Purchase_Cost_Rs": round(grid_purchase_cost, 2),
-
         "Annual_Net_Benefit_Rs": round(annual_net_benefit, 2),
         "Payback_Years": round(payback_years, 2) if payback_years else None,
-
         "CO2_Offset_Tons_per_Year": round(co2_offset, 2),
-
         "25_Year_Total_Savings_Rs": round(total_savings_25, 2),
         "25_Year_Net_Profit_Rs": round(net_profit_25, 2)
     }
